@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Query,  UploadFile, File
+from fastapi import FastAPI, HTTPException, Query, UploadFile, File
 from pydantic import BaseModel
 from typing import List, Optional
 from elasticsearch import Elasticsearch
@@ -6,7 +6,6 @@ from sentence_transformers import SentenceTransformer
 import os
 from dotenv import load_dotenv
 from docx import Document as DocxDocument
-import math
 
 load_dotenv()
 ELASTICSEARCH_ENDPOINT = os.getenv("ELASTICSEARCH_ENDPOINT")
@@ -24,16 +23,23 @@ app = FastAPI(title="RAG Document Indexing API")
 # --- Pydantic モデル ---
 class IndexRequest(BaseModel):
     index_name: str
+    description: Optional[str] = None
 
 class Document(BaseModel):
-    title: str
+    description: str
     content: str
 
 class ChunkedDocument(BaseModel):
     index_name: str
-    title: str
+    description: str
     content: str
     chunk_size: Optional[int] = 200  # 1チャンクの文字数デフォルト200
+
+class DocumentChunkRequest(BaseModel):
+    index_name: str                # 保存先インデックス名
+    description: str               # ドキュメントの説明 (検索対象フィールド)
+    content: str                   # 登録する元テキスト
+    chunk_size: int = 200          # チャンクサイズ（デフォルト200文字）
 
 # --- ファイル前処理関数 ---
 def preprocess_text(text: str, chunk_size: int = 500) -> List[dict]:
@@ -58,36 +64,91 @@ def preprocess_file(file_path: str, chunk_size: int = 500) -> List[dict]:
     return preprocess_text(text, chunk_size)
 
 # --- インデックス作成 ---
+# @app.post("/create_index/")
+# def create_index(request: IndexRequest):
+#     index_body = {
+#         "mappings": {
+#             "properties": {
+#                 "description": {"type": "text"},  # title → description
+#                 "content": {"type": "text"},
+#                 "embedding": {"type": "dense_vector", "dims": VECTOR_DIM}
+#             }
+#         }
+#     }
+#     try:
+#         es.indices.create(index=request.index_name, body=index_body, ignore=400)
+#         return {"message": f"Index '{request.index_name}' created successfully."}
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=str(e))
+
+# @app.post("/create_index/")
+# def create_index(request: IndexRequest):
+#     index_body = {
+#         "settings": {
+#             "index": {
+#                 "number_of_shards": 1,
+#                 "number_of_replicas": 0,
+#                 "description": request.description or "No description provided"
+#             }
+#         },
+#         "mappings": {
+#             "properties": {
+#                 "description": {"type": "text"},  # ドキュメント単位の description
+#                 "content": {"type": "text"},
+#                 "embedding": {"type": "dense_vector", "dims": VECTOR_DIM}
+#             }
+#         }
+#     }
+
+#     try:
+#         es.indices.create(index=request.index_name, body=index_body, ignore=400)
+#         return {
+#             "message": f"Index '{request.index_name}' created successfully.",
+#             "index_description": request.description
+#         }
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/create_index/")
 def create_index(request: IndexRequest):
     index_body = {
+        "settings": {
+            "index": {
+                "number_of_shards": 1,
+                "number_of_replicas": 0
+            }
+        },
         "mappings": {
             "properties": {
-                "title": {"type": "text"},
+                "description": {"type": "text"},
                 "content": {"type": "text"},
                 "embedding": {"type": "dense_vector", "dims": VECTOR_DIM}
             }
         }
     }
+
     try:
         es.indices.create(index=request.index_name, body=index_body, ignore=400)
-        return {"message": f"Index '{request.index_name}' created successfully."}
+        return {
+            "message": f"Index '{request.index_name}' created successfully.",
+            "index_description": request.description or "No description"
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- ドキュメント登録（チャンク化対応） ---
-@app.post("/index_document_chunked/")
-def index_document_chunked(doc: ChunkedDocument):
+def index_document_chunked(request: DocumentChunkRequest):
     try:
-        chunks = preprocess_text(doc.content, doc.chunk_size)
-        for i, chunk_info in enumerate(chunks):
-            doc_body = {
-                "title": f"{doc.title} - chunk {i+1}",
-                "content": chunk_info["content"],
-                "embedding": chunk_info["embedding"]
+        chunks = [request.content[i:i+request.chunk_size] for i in range(0, len(request.content), request.chunk_size)]
+        for chunk in chunks:
+            vector = embedding_model.encode(chunk).tolist()
+            doc = {
+                "description": request.description,
+                "content": chunk,
+                "embedding": vector
             }
-            es.index(index=doc.index_name, document=doc_body)
-        return {"message": f"{len(chunks)} chunks from document '{doc.title}' indexed successfully."}
+            es.index(index=request.index_name, body=doc)
+        return {"message": f"Document indexed into '{request.index_name}' in {len(chunks)} chunks"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -101,7 +162,7 @@ async def index_file(file: UploadFile = File(...), index_name: str = "rag_docs",
         chunks = preprocess_file(tmp_path, chunk_size)
         for i, chunk_info in enumerate(chunks):
             doc_body = {
-                "title": f"{file.filename} - chunk {i+1}",
+                "description": f"{file.filename} - chunk {i+1}",  # title → description
                 "content": chunk_info["content"],
                 "embedding": chunk_info["embedding"]
             }
@@ -122,11 +183,12 @@ def search(index_name: str, query: str, top_k: int = 3):
                     "query": {
                         "multi_match": {
                             "query": query,
-                            "fields": ["title", "content"]
+                            "fields": ["description", "content"]
                         }
                     },
                     "script": {
-                        "source": "cosineSimilarity(params.query_vector, 'embedding') + 1.0",
+                        # cosineSimilarity のスコアを multi_match に加点
+                        "source": "cosineSimilarity(params.query_vector, 'embedding') + _score",
                         "params": {"query_vector": query_vector}
                     }
                 }
@@ -135,31 +197,48 @@ def search(index_name: str, query: str, top_k: int = 3):
 
         res = es.search(index=index_name, body=hybrid_query)
         results = [
-            {"title": hit["_source"]["title"], "score": hit["_score"]}
+            {
+                "description": hit["_source"].get("description", ""),
+                "content": hit["_source"].get("content", ""),
+                "score": hit["_score"]
+            }
             for hit in res["hits"]["hits"]
         ]
         return {"results": results}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# --- インデックス一覧 ---
 @app.get("/list_indices/")
 def list_indices():
     try:
-        indices = es.cat.indices(format="json")
-        index_names = [idx["index"] for idx in indices]
-        return {"indices": index_names}
+        # 全インデックス名取得
+        indices_info = es.indices.get(index="*")
+        indices_list = []
+
+        for index_name in indices_info.keys():
+            # 各インデックスの _meta_ ドキュメント取得
+            try:
+                meta_res = es.get(index=index_name, id="_meta_")
+                description = meta_res["_source"].get("description", "")
+            except:
+                description = ""  # _meta_ がない場合は空文字
+
+            indices_list.append({"index": index_name, "description": description})
+
+        return {"indices": indices_list}
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
+# --- インデックス内容取得 ---
 @app.get("/index_content/")
 def index_content(index_name: str = Query(..., description="取得したいIndex名")):
     try:
-        # 全件取得（sizeは適宜調整）
         res = es.search(index=index_name, query={"match_all": {}}, size=100)
         documents = [
             {
-                "title": hit["_source"].get("title"),
+                "description": hit["_source"].get("description"),
                 "content": hit["_source"].get("content"),
                 "score": hit["_score"]
             }

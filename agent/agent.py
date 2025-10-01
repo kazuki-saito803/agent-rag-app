@@ -50,8 +50,8 @@ google_search_agent = LlmAgent(
     tools = [google_search]
 )
 
-greeting_agent = LlmAgent(
-    name = "greeting_agent",
+retrieve_agent = LlmAgent(
+    name = "retrieve_agent",
     model = model,
     description = (
         "あなたは親しみやすい挨拶エージェントです。"
@@ -64,8 +64,8 @@ greeting_agent = LlmAgent(
 conditinator_agent = LlmAgent(
     name = "conditinator_agent",
     model = model,
-    description = "挨拶と天気のエージェントを連携し、その他の質問はWeb検索で対応します。",
+    description = "検索と生成のエージェントを連携し、その他の質問はWeb検索してからで対応します。",
     tools = [AgentTool(google_search_agent)],  # ビルドインツール機能を使用するエージェントの場合はAgentToolとしてtoolsに定義
-    sub_agents = [greeting_agent, weather_agent]  # サブエージェントの定義
+    sub_agents = [retrieve_agent, weather_agent]  # サブエージェントの定義
 )
 root_agent = conditinator_agent

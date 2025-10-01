@@ -1,0 +1,16 @@
+# ElasticSearch の公式イメージをベースにする
+FROM docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+
+# 環境変数の設定（開発用: 認証無効化 & シングルノード）
+ENV discovery.type=single-node
+ENV xpack.security.enabled=false
+ENV ES_JAVA_OPTS="-Xms1g -Xmx1g"
+
+# データを保持するためのボリュームをマウント
+VOLUME ["/usr/share/elasticsearch/data"]
+
+# ポート開放
+EXPOSE 9200
+EXPOSE 9300
+
+# Entrypoint は公式イメージのものを利用
