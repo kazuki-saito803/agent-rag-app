@@ -6,9 +6,11 @@ from sentence_transformers import SentenceTransformer
 import os
 from dotenv import load_dotenv
 from docx import Document as DocxDocument
+import uvicorn
 
 load_dotenv()
 ELASTICSEARCH_ENDPOINT = os.getenv("ELASTICSEARCH_ENDPOINT")
+PORT = int(os.getenv("API_SEVER_PORT"))
 
 # --- ElasticSearch 接続 ---
 es = Elasticsearch(ELASTICSEARCH_ENDPOINT)
@@ -67,33 +69,15 @@ def preprocess_file(file_path: str, chunk_size: int = 500) -> List[dict]:
 # @app.post("/create_index/")
 # def create_index(request: IndexRequest):
 #     index_body = {
-#         "mappings": {
-#             "properties": {
-#                 "description": {"type": "text"},  # title → description
-#                 "content": {"type": "text"},
-#                 "embedding": {"type": "dense_vector", "dims": VECTOR_DIM}
-#             }
-#         }
-#     }
-#     try:
-#         es.indices.create(index=request.index_name, body=index_body, ignore=400)
-#         return {"message": f"Index '{request.index_name}' created successfully."}
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=str(e))
-
-# @app.post("/create_index/")
-# def create_index(request: IndexRequest):
-#     index_body = {
 #         "settings": {
 #             "index": {
 #                 "number_of_shards": 1,
-#                 "number_of_replicas": 0,
-#                 "description": request.description or "No description provided"
+#                 "number_of_replicas": 0
 #             }
 #         },
 #         "mappings": {
 #             "properties": {
-#                 "description": {"type": "text"},  # ドキュメント単位の description
+#                 "description": {"type": "text"},
 #                 "content": {"type": "text"},
 #                 "embedding": {"type": "dense_vector", "dims": VECTOR_DIM}
 #             }
@@ -104,7 +88,7 @@ def preprocess_file(file_path: str, chunk_size: int = 500) -> List[dict]:
 #         es.indices.create(index=request.index_name, body=index_body, ignore=400)
 #         return {
 #             "message": f"Index '{request.index_name}' created successfully.",
-#             "index_description": request.description
+#             "index_description": request.description or "No description"
 #         }
 #     except Exception as e:
 #         raise HTTPException(status_code=500, detail=str(e))
@@ -129,6 +113,14 @@ def create_index(request: IndexRequest):
 
     try:
         es.indices.create(index=request.index_name, body=index_body, ignore=400)
+        
+        # --- _meta_ ドキュメント登録 ---
+        es.index(
+            index=request.index_name,
+            id="_meta_",
+            document={"description": request.description or ""}
+        )
+        
         return {
             "message": f"Index '{request.index_name}' created successfully.",
             "index_description": request.description or "No description"
@@ -137,6 +129,7 @@ def create_index(request: IndexRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- ドキュメント登録（チャンク化対応） ---
+@app.post("/index_document_chunked/")
 def index_document_chunked(request: DocumentChunkRequest):
     try:
         chunks = [request.content[i:i+request.chunk_size] for i in range(0, len(request.content), request.chunk_size)]
@@ -172,30 +165,55 @@ async def index_file(file: UploadFile = File(...), index_name: str = "rag_docs",
         os.remove(tmp_path)
 
 # --- ハイブリッド検索エンドポイント ---
+# @app.get("/search/")
+# def search(index_name: str, query: str, top_k: int = 3):
+#     try:
+#         query_vector = embedding_model.encode(query).tolist()
+#         hybrid_query = {
+#             "size": top_k,
+#             "query": {
+#                 "script_score": {
+#                     "query": {
+#                         "multi_match": {
+#                             "query": query,
+#                             "fields": ["description", "content"]
+#                         }
+#                     },
+#                     "script": {
+#                         # cosineSimilarity のスコアを multi_match に加点
+#                         "source": "cosineSimilarity(params.query_vector, doc['embedding']) + 1.0",
+#                         "params": {"query_vector": query_vector}
+#                     }
+#                 }
+#             }
+#         }
+
+#         res = es.search(index=index_name, body=hybrid_query)
+#         results = [
+#             {
+#                 "description": hit["_source"].get("description", ""),
+#                 "content": hit["_source"].get("content", ""),
+#                 "score": hit["_score"]
+#             }
+#             for hit in res["hits"]["hits"]
+#         ]
+#         return {"results": results}
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=str(e))
 @app.get("/search/")
 def search(index_name: str, query: str, top_k: int = 3):
     try:
         query_vector = embedding_model.encode(query).tolist()
-        hybrid_query = {
-            "size": top_k,
-            "query": {
-                "script_score": {
-                    "query": {
-                        "multi_match": {
-                            "query": query,
-                            "fields": ["description", "content"]
-                        }
-                    },
-                    "script": {
-                        # cosineSimilarity のスコアを multi_match に加点
-                        "source": "cosineSimilarity(params.query_vector, 'embedding') + _score",
-                        "params": {"query_vector": query_vector}
-                    }
-                }
+        knn_query = {
+            "knn": {
+                "field": "embedding",
+                "query_vector": query_vector,
+                "k": top_k,
+                "num_candidates": 100
             }
         }
 
-        res = es.search(index=index_name, body=hybrid_query)
+        res = es.search(index=index_name, body=knn_query)
         results = [
             {
                 "description": hit["_source"].get("description", ""),
@@ -247,3 +265,33 @@ def index_content(index_name: str = Query(..., description="取得したいIndex
         return {"index": index_name, "documents": documents}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# --- インデックス削除エンドポイント ---
+@app.delete("/delete_index/")
+def delete_index(index_name: str = Query(..., description="削除したいインデックス名")):
+    """
+    指定した Elasticsearch インデックスを削除します。
+    存在しない場合はエラーを返します。
+    """
+    try:
+        if not es.indices.exists(index=index_name):
+            raise HTTPException(status_code=404, detail=f"Index '{index_name}' does not exist.")
+        
+        res = es.indices.delete(index=index_name)
+        if res.get("acknowledged", False):
+            return {"message": f"Index '{index_name}' deleted successfully."}
+        else:
+            raise HTTPException(status_code=500, detail=f"Failed to delete index '{index_name}'.")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+if __name__ == "__main__":
+    # uvicorn.run を使って直接サーバー起動
+    uvicorn.run(
+        "test:app",      # "ファイル名:FastAPIオブジェクト名"
+        host="0.0.0.0",
+        port=PORT,
+        reload=True      # 開発用。コード変更時に自動リロード
+    )

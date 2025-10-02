@@ -4,7 +4,7 @@ import streamlit as st
 import requests
 
 load_dotenv()
-API_URL = os.getenv("API_URL")
+API_URL = os.getenv("API_SERVER_URL")
 
 st.title("RAG Document Indexing UI")
 
@@ -75,7 +75,7 @@ if st.button("Search", key="btn_search"):
         if res.status_code == 200:
             results = res.json().get("results", [])
             for r in results:
-                st.markdown(f"**{r['description']}** (score: {r['score']:.3f})")
+                st.markdown(f"**{r['content']}** (score: {r['score']:.3f})")
         else:
             st.error(res.json())
     else:
@@ -104,3 +104,19 @@ if st.button("View Index Content", key="btn_view_index_content"):
             st.error(res.json())
     else:
         st.warning("インデックス名を入力してください。")
+
+# --- 7. インデックス削除 ---
+st.subheader("7. インデックス削除")
+index_name_delete = st.text_input("削除したいインデックス名", key="index_name_delete")
+if st.button("Delete Index", key="btn_delete_index"):
+    if index_name_delete:
+        res = requests.delete(
+            f"{API_URL}/delete_index/",
+            params={"index_name": index_name_delete}
+        )
+        if res.status_code == 200:
+            st.success(res.json().get("message"))
+        else:
+            st.error(res.json().get("detail", "削除に失敗しました"))
+    else:
+        st.warning("削除するインデックス名を入力してください。")

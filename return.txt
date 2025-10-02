@@ -1,0 +1,47 @@
+[
+    Tool(
+        name='search', 
+        title=None, 
+        description='指定されたインデックスからハイブリッド検索を行います。\n\nこのツールは以下を組み合わせた検索を提供します:\n- テキスト検索（description, content フィールドに対する multi_match）\n- ベクトル検索（sentence-transformers による埋め込みベクトル）\n\nArgs:\n    index_name (str): 検索対象のインデックス名\n    query (str): 検索クエリ\n    top_k (int): 取得件数（デフォルト3）\n\nReturns:\n    dict: 検索結果のリスト。\n          各要素には description, content, score が含まれます。', 
+        inputSchema={
+            'properties': {
+                'index_name': {
+                    'type': 'string'
+                }, 
+                'query': {
+                    'type': 'string'
+                }, 
+                'top_k': {
+                    'default': 3, 'type': 'integer'
+                }
+            }, 
+            'required': ['index_name', 'query'], 
+            'type': 'object'
+        }, 
+        outputSchema=None, 
+        icons=None, 
+        annotations=None, 
+        meta={
+            '_fastmcp': {
+                'tags': []
+            }
+        }
+    ), 
+    Tool(
+        name='list_indices', 
+        title=None, 
+        description='利用可能なインデックスの一覧を取得します。\n\nArgs:\n    なし\n\nReturns:\n    dict: インデックスのリスト。\n          各要素には index (インデックス名) と description (説明) が含まれます。\n          description は _meta_ ドキュメントから取得できない場合は空文字となります。', 
+        inputSchema={
+            'properties': {}, 
+            'type': 'object'
+        }, 
+        outputSchema=None, 
+        icons=None, 
+        annotations=None, 
+        meta={
+            '_fastmcp': {
+                'tags': []
+            }
+        }
+    )
+]
