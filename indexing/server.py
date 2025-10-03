@@ -66,33 +66,6 @@ def preprocess_file(file_path: str, chunk_size: int = 500) -> List[dict]:
     return preprocess_text(text, chunk_size)
 
 # --- インデックス作成 ---
-# @app.post("/create_index/")
-# def create_index(request: IndexRequest):
-#     index_body = {
-#         "settings": {
-#             "index": {
-#                 "number_of_shards": 1,
-#                 "number_of_replicas": 0
-#             }
-#         },
-#         "mappings": {
-#             "properties": {
-#                 "description": {"type": "text"},
-#                 "content": {"type": "text"},
-#                 "embedding": {"type": "dense_vector", "dims": VECTOR_DIM}
-#             }
-#         }
-#     }
-
-#     try:
-#         es.indices.create(index=request.index_name, body=index_body, ignore=400)
-#         return {
-#             "message": f"Index '{request.index_name}' created successfully.",
-#             "index_description": request.description or "No description"
-#         }
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=str(e))
-
 @app.post("/create_index/")
 def create_index(request: IndexRequest):
     index_body = {
@@ -165,41 +138,6 @@ async def index_file(file: UploadFile = File(...), index_name: str = "rag_docs",
         os.remove(tmp_path)
 
 # --- ハイブリッド検索エンドポイント ---
-# @app.get("/search/")
-# def search(index_name: str, query: str, top_k: int = 3):
-#     try:
-#         query_vector = embedding_model.encode(query).tolist()
-#         hybrid_query = {
-#             "size": top_k,
-#             "query": {
-#                 "script_score": {
-#                     "query": {
-#                         "multi_match": {
-#                             "query": query,
-#                             "fields": ["description", "content"]
-#                         }
-#                     },
-#                     "script": {
-#                         # cosineSimilarity のスコアを multi_match に加点
-#                         "source": "cosineSimilarity(params.query_vector, doc['embedding']) + 1.0",
-#                         "params": {"query_vector": query_vector}
-#                     }
-#                 }
-#             }
-#         }
-
-#         res = es.search(index=index_name, body=hybrid_query)
-#         results = [
-#             {
-#                 "description": hit["_source"].get("description", ""),
-#                 "content": hit["_source"].get("content", ""),
-#                 "score": hit["_score"]
-#             }
-#             for hit in res["hits"]["hits"]
-#         ]
-#         return {"results": results}
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=str(e))
 @app.get("/search/")
 def search(index_name: str, query: str, top_k: int = 3):
     try:

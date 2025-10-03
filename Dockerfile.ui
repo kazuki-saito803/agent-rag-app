@@ -1,0 +1,18 @@
+# ベースイメージ（Python公式イメージを利用）
+FROM python:3.11-slim
+
+# 作業ディレクトリを作成
+WORKDIR /app
+
+# 依存関係をコピーしてインストール
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# アプリケーション本体をコピー
+COPY ui/ ./app
+
+# Streamlitのポートを公開
+EXPOSE 8501
+
+# コンテナ起動時のコマンド
+CMD ["streamlit", "run", "app/indexing_ui.py"]

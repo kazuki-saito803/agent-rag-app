@@ -97,4 +97,3 @@ def list_indices():
 
 if __name__ == "__main__":
     mcp.run(transport="http", port=mcp_server_port)
-    # print(ELASTICSEARCH_ENDPOINT)

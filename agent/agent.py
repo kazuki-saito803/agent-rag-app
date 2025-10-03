@@ -1,79 +1,90 @@
 import os
 
 from dotenv import load_dotenv
+import asyncio
+from fastmcp import Client
+
 from google.adk.agents.llm_agent import LlmAgent
 from google.adk.tools import google_search
-from google.adk.tools.agent_tool import AgentTool
-
 
 load_dotenv()
 model = os.getenv("MODEL")
+MCP_SEVER_URL = os.getenv("MCP_SEVER_URL")
 
-# def get_weather(city: str) -> dict:
-#     """
-#     指定された都市の天気を取得する関数
+async def get_tools():
+    """
+    MCPサーバーで提供されているツールを取得する関数
     
-#     引数: 
-#         city(str):都市名(英語小文字表記のみ)
+    引数: 
+        なし
         
-#     戻り値:
-#         dict:
-#             - status(str): "success"または"error"
-#             - report(str): 天気情報のメッセージ(成功時)
-#             - error_message(str): エラー発生時の詳細なメッセージ
-#     """
-#     return {
-#         "status":"success",
-#         "report":f"{city}の天気は晴れです。"
-#     }
+    戻り値:
+        dict:
+    """
+    async with Client(f"{MCP_SEVER_URL}/mcp") as client:
+        # ツール一覧を確認
+        tools = await client.list_tools()
+        return tools
 
-# weather_agent = LlmAgent(
-#     name = "weather_agent",
-#     model = model,
-#     description = (
-#         "あなたは、ユーザーから都市の情報を受け取り、その都市の天気を案内するアシスタントです。"
-#         "都市名だけの入力はその都市の天気を聞いていると判断してください。"
-#         "入力された都市名を英語小文字表記に変換して、get_weatherツールに渡して。"
-#         "Google検索ツールを使用して、天気情報を取得してください。"
-#         "天気に関する質問以外の質問が来た場合は、conditinator_agentに任せてください。"
-#     ),
-#     tools = [get_weather]
-# )
+async def call_tools(tool_name: str, args: dict)->dict:
+    """
+    MCPサーバーの指定されたツールを呼び出すためのツール
+    
+    引数: 
+        tool_name(str): MCPサーバーで提供されているツール名
+        args(dict): 引数名とそれに紐づく値の辞書
+        例
+        {
+            "name": "Bob"
+        }
+        
+    戻り値:
+        dict:各Toolが返す辞書
+    """
+    async with Client(f"{MCP_SEVER_URL}/mcp") as client:
+        # ツール一覧を確認
+        result = await client.call_tool(tool_name, args)
+        return result
 
-# google_search_agent = LlmAgent(
-#     name = "google_search_agent",
-#     model = model,
-#     description = (
-#         "あなたは、Google検索エージェントです。"
-#         "ユーザーから検索キーワードを受け取り、検索結果を返してください。"
-#     ),
-#     tools = [google_search]
-# )
+mcp_client_agent = LlmAgent(
+    name = "mcp_client_agent",
+    model = model,
+    description = (
+        "あなたは、mcpサーバーと通信するためのツールを使い、orchestrator_agentからの指示に従ってRAGの検索を行うアシスタントです。"
+        "与えられたmcpサーバーに接続するツールを元にしてRAG検索を行い、結果をorchestrator_agentに返してください。"
+    ),
+    tools=[call_tools]
+)
 
-# retrieve_agent = LlmAgent(
-#     name = "retrieve_agent",
-#     model = model,
-#     description = (
-#         "あなたは親しみやすい挨拶エージェントです。"
-#         "ユーザーから「こんにちは」「おはよう」などの挨拶を受け取ったら、"
-#         "自然な日本語で挨拶をしつつ、「都市の天気に関して質問ができます」と案内してください。"
-#         "挨拶以外の質問が来た場合は、conditinator_agentに任せてください。"
-#     )
-# )
+google_search_agent = LlmAgent(
+    name = "google_search_agent",
+    model = model,
+    description = (
+        "あなたは、Google検索エージェントです。"
+        "ユーザーから検索キーワードを受け取り、検索結果を返してください。"
+    ),
+    tools = [google_search]
+)
+get_tool_agent = LlmAgent(
+    name = "get_tool_agent",
+    model = model,
+    description = (
+        "あなたは、mcpサーバーのツール一覧とその説明を取得し、orchestrator_agentにその結果を返すアシスタントです。"
+        "orchestrator_agentからリクエストをもらったら, 与えられたget_toolsのツールを実行してその結果を返してください。"
+    ),
+    tools = [get_tools]
+)
 
-# conditinator_agent = LlmAgent(
-#     name = "conditinator_agent",
-#     model = model,
-#     description = "検索と生成のエージェントを連携し、その他の質問はWeb検索してからで対応します。",
-#     tools = [AgentTool(google_search_agent)],  # ビルドインツール機能を使用するエージェントの場合はAgentToolとしてtoolsに定義
-#     sub_agents = [retrieve_agent, weather_agent]  # サブエージェントの定義
-# )
-# conditinator_agent = LlmAgent(
-#     name = "conditinator_agent",
-#     model = model,
-#     description = "検索と生成のエージェントを連携し、その他の質問はWeb検索してからで対応します。",
-#     tools = [AgentTool(google_search_agent)],  # ビルドインツール機能を使用するエージェントの場合はAgentToolとしてtoolsに定義
-#     sub_agents = [retrieve_agent, weather_agent]  # サブエージェントの定義
-# )
+orchestrator_agent = LlmAgent(
+    name = "orchestrator_agent",
+    model = model,
+    description = (
+        "あなたは、ユーザーからのリクエストに応じて各種sub_agentを利用して回答の材料となる情報を取得し、最終的な回答を行うアシスタントです。"
+        "まず、質問が与えられたら、get_tool_agentでMCPサーバーのツールのメタ情報を取得し、どのようなツールが使えそうかを確認してください。"
+        "その後に、mcp_client_agentを使ってデータベースからユーザーの質問に応じた情報を取得します。"
+        "そしてその情報を元にしてあなたが最終的な回答を生成してユーザーに返してください。"
+    ),
+    sub_agents = [mcp_client_agent, get_tool_agent]
+)
 
-# root_agent = conditinator_agent
+root_agent = orchestrator_agent

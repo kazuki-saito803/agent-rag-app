@@ -12,5 +12,3 @@ VOLUME ["/usr/share/elasticsearch/data"]
 # ポート開放
 EXPOSE 9200
 EXPOSE 9300
-
-# Entrypoint は公式イメージのものを利用
