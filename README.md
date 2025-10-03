@@ -52,5 +52,6 @@ AI AgentによるRAG型チャットボット
     ブラウザで以下のURLを検索  
     [http://localhost:8000](http://localhost:8000)  
 1. プロンプトを入力して実行
+    ![Chat画像](./assets/chat01.png)
 1. その他  
     Index作成用UIからプロンプトに応じた検索結果の確認やIndex一覧確認、Index削除なども行えます。
