@@ -4,9 +4,14 @@ FROM python:3.11-slim
 # 作業ディレクトリを作成
 WORKDIR /app
 
+# 作業ディレクトリに.env をコピー
+COPY .env .
+
 # 依存関係をコピーしてインストール
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir sentence-transformers
+RUN pip install --no-cache-dir fastmcp
 
 # アプリケーション本体をコピー
 COPY mcp/ ./app

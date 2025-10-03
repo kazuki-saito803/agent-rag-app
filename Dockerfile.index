@@ -4,9 +4,13 @@ FROM python:3.11-slim
 # 作業ディレクトリを作成
 WORKDIR /app
 
+# 作業ディレクトリに.env をコピー
+COPY .env .
+
 # 依存関係をコピーしてインストール
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install fastapi uvicorn[standard] python-multipart python-dotenv elasticsearch sentence-transformers python-docx
 
 # アプリケーション本体をコピー
 COPY indexing/ ./app
@@ -15,4 +19,4 @@ COPY indexing/ ./app
 EXPOSE 8002
 
 # コンテナ起動時のコマンド
-CMD ["uvicorn", "app/server:app", "--host", "0.0.0.0", "--port", "8002"]
+CMD ["uvicorn", "app.server:app", "--host", "0.0.0.0", "--port", "8002"]

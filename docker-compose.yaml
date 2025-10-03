@@ -1,0 +1,56 @@
+version: "3.9"
+
+services:
+  elasticsearch:
+    build:
+      context: .
+      dockerfile: Dockerfile.elastic
+    container_name: elastic-search
+    ports:
+      - "9200:9200"
+    environment:
+      - discovery.type=single-node
+
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    container_name: mcp-server
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+
+  indexing-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.index
+    container_name: indexing-server
+    ports:
+      - "8002:8002"
+    env_file:
+      - .env
+    depends_on:
+      - elasticsearch
+
+  indexing-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.ui
+    container_name: indexing-ui
+    ports:
+      - "8501:8501"
+    environment:
+      API_URL: "http://indexing-server:8002"
+    depends_on:
+      - indexing-server
+
+  agent-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    container_name: agent-ui
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mcp-server
