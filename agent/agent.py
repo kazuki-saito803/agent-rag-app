@@ -1,7 +1,6 @@
 import os
 
 from dotenv import load_dotenv
-import asyncio
 from fastmcp import Client
 
 from google.adk.agents.llm_agent import LlmAgent

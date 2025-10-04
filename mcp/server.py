@@ -16,11 +16,11 @@ es = Elasticsearch(ELASTICSEARCH_ENDPOINT)
 embedding_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 VECTOR_DIM = embedding_model.get_sentence_embedding_dimension()
 
-# --- ハイブリッド検索エンドポイント ---
+# --- ベクトル検索エンドポイント ---
 @mcp.tool()
 def search(index_name: str, query: str, top_k: int = 3):
     """
-    指定されたインデックスからハイブリッド検索を行います。
+    指定されたインデックスからベクトル検索を行います。
 
     このツールは以下を組み合わせた検索を提供します:
     - テキスト検索（description, content フィールドに対する multi_match）
